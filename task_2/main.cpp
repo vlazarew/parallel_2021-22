@@ -93,10 +93,7 @@ double makeSolution(int processId, int countOfProcesses, double &eps, int &count
             double diff = fabs(ANALYTIC_VALUE - integratedValue);
             if (true) {
                 cout << "Loop - " << countOfIterations << ".  Integrated Value = " << integratedValue <<
-                     "; diff = " << diff <<
-                     "; Anal = " << ANALYTIC_VALUE <<
-                     "; VOLUME_OF_P = " << VOLUME_OF_P <<
-                     endl;
+                     "; diff = " << diff << endl;
             }
 
             haveResult = (diff <= eps);
