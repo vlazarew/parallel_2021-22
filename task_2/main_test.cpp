@@ -1,4 +1,6 @@
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 // #include <mpi/mpi.h>
 #include <mpi.h>
 #include <string>
@@ -99,8 +101,10 @@ double makeSolution(int processId, int countOfProcesses, double &eps, int &count
             integratedValue = calculatedSum * VOLUME_OF_P / countOfIterations;
 
             double diff = fabs(ANALYTIC_VALUE - integratedValue);
-            cout << "Loop - " << countOfIterations << ".  Integrated Value = " << integratedValue <<
-                 "; diff = " << diff << endl;
+            // if (true) {
+            //     cout << "Loop - " << countOfIterations << ".  Integrated Value = " << integratedValue <<
+            //          "; diff = " << diff << endl;
+            // }
 
             // haveResult = (diff <= eps);
             haveResult = (diff <= eps) ? 1 : 0;
@@ -117,24 +121,44 @@ double makeSolution(int processId, int countOfProcesses, double &eps, int &count
 
 void printStats(int countOfProcesses, double eps, int countOfIterations, double integratedValue, double minTime,
                 double maxTime, double avgTime) {
-    cout << "--------------------------------------------------------------" << endl;
-    cout << "Author: Lazarev V. A. / 8 Option / Independent generation of points by MPI processes" << endl;
-    cout << "Count of processes: " << countOfProcesses << endl;
-    cout << "Epsilon: " << eps << endl;
-    cout << "Count of points (for each process): " << COUNT_OF_POINTS << endl;
-    cout << "x = [" << X_MIN << ", " << X_MAX << "]; y = [" << Y_MIN << ", " << Y_MAX << "]; z = [" << Z_MIN << ", "
-         << Z_MAX << "];" << endl;
-    cout << "VOLUME_OF_P: " << VOLUME_OF_P << endl;
-    cout << "--------------------------------------------------------------" << endl;
-    cout << "Count of iterations: " << countOfIterations << endl;
-    cout << "Total count of poins: " << COUNT_OF_POINTS * countOfIterations * countOfProcesses << endl;
-    cout << "Analytic value: " << ANALYTIC_VALUE << endl;
-    cout << "Calculated value : " << integratedValue << endl;
-    cout << "Error: " << fabs(ANALYTIC_VALUE - integratedValue) << endl;
-    cout << "--------------------------------------------------------------" << endl;
-    cout << "Minimal time (s): " << minTime << endl;
-    cout << "Maximum time (s): " << maxTime << endl;
-    cout << "Average time (s): " << avgTime << endl << endl;
+    // cout << "--------------------------------------------------------------" << endl;
+    // cout << "Author: Lazarev V. A. / 8 Option / Independent generation of points by MPI processes" << endl;
+    // cout << "Count of processes: " << countOfProcesses << endl;
+    // cout << "Epsilon: " << eps << endl;
+    // cout << "Count of points (for each process): " << COUNT_OF_POINTS << endl;
+    // cout << "x = [" << X_MIN << ", " << X_MAX << "]; y = [" << Y_MIN << ", " << Y_MAX << "]; z = [" << Z_MIN << ", "
+    //      << Z_MAX << "];" << endl;
+    // cout << "VOLUME_OF_P: " << VOLUME_OF_P << endl;
+    // cout << "--------------------------------------------------------------" << endl;
+    // cout << "Count of iterations: " << countOfIterations << endl;
+    // cout << "Total count of poins: " << COUNT_OF_POINTS * countOfIterations * countOfProcesses << endl;
+    // cout << "Analytic value: " << ANALYTIC_VALUE << endl;
+    // cout << "Calculated value : " << integratedValue << endl;
+    // cout << "Error: " << fabs(ANALYTIC_VALUE - integratedValue) << endl;
+    // cout << "--------------------------------------------------------------" << endl;
+    // cout << "Minimal time (s): " << minTime << endl;
+    // cout << "Maximum time (s): " << maxTime << endl;
+    // cout << "Average time (s): " << avgTime << endl << endl;
+    ofstream fout("output.txt", ios::app);
+    fout << "--------------------------------------------------------------" << endl;
+    fout << "Author: Lazarev V. A. / 8 Option / Independent generation of points by MPI processes" << endl;
+    fout << "Count of processes: " << countOfProcesses << endl;
+    fout << "Epsilon: " << eps << endl;
+    fout << "Count of points (for each process): " << COUNT_OF_POINTS << endl;
+    fout << "x = [" << X_MIN << ", " << X_MAX << "]; y = [" << Y_MIN << ", " << Y_MAX << "]; z = [" << Z_MIN << ", "
+            << Z_MAX << "];" << endl;
+    fout << "VOLUME_OF_P: " << VOLUME_OF_P << endl;
+    fout << "--------------------------------------------------------------" << endl;
+    fout << "Count of iterations: " << countOfIterations << endl;
+    fout << "Total count of poins: " << COUNT_OF_POINTS * countOfIterations * countOfProcesses << endl;
+    fout << "Analytic value: " << ANALYTIC_VALUE << endl;
+    fout << "Calculated value : " << integratedValue << endl;
+    fout << "Error: " << fabs(ANALYTIC_VALUE - integratedValue) << endl;
+    fout << "--------------------------------------------------------------" << endl;
+    fout << "Minimal time (s): " << minTime << endl;
+    fout << "Maximum time (s): " << maxTime << endl;
+    fout << "Average time (s): " << avgTime << endl << endl;
+    fout.close();
 }
 
 // ЛАЗАРЕВ В.А. / 628 группа / 8 вариант
@@ -158,7 +182,14 @@ int main(int argc, char *argv[]) {
 
     double start = MPI_Wtime();
 
-    double integratedValue = makeSolution(processId, countOfProcesses, eps, countOfIterations, calculatedSum); 
+    double totalError = 0;
+    double totalIters = 50;
+
+    for (size_t i = 0; i < totalIters; i++)
+    {
+        double integratedValue = makeSolution(processId, countOfProcesses, eps, countOfIterations, calculatedSum);
+        totalError += fabs(ANALYTIC_VALUE - integratedValue);
+    }    
 
     double end = MPI_Wtime();
     double diffTime = end - start;
@@ -177,7 +208,10 @@ int main(int argc, char *argv[]) {
 
     // Чтоб печатал информацию только один процесс
     if (processId == MAIN_PROCESS_ID) {
-        printStats(countOfProcesses, eps, countOfIterations, integratedValue, minTime, maxTime, avgTime);
+        // printStats(countOfProcesses, eps, countOfIterations, integratedValue, minTime, maxTime, avgTime);
+        ofstream fout("output.txt", ios::app);
+        fout << "| " << setw(12) << eps << " | " << setw(19) << countOfProcesses << " | " << setw(26) << (maxTime / totalIters) << " |           | " << setw(11) << (totalError / totalIters) << " |" << endl;
+        fout.close();
     }
 
     MPI_Finalize();
