@@ -5,18 +5,14 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
+#include <omp.h>
 
 using namespace std;
 
 
-struct Parallelepiped {
-    double x;
-    double y;
-    double z;
-};
-
-float getFloatValueFromArg(const char *key, int argc, char *argv[]) {
+float getFloatValueFromArg(const char *key, int argc, char *argv[], float defaultValue) {
     float value = 0;
+    bool valueFound = false;
     // Первый параметр - ссылка на сборку
     for (int i = 1; i < argc; ++i) {
         string currentArgument(argv[i]);
@@ -25,6 +21,8 @@ float getFloatValueFromArg(const char *key, int argc, char *argv[]) {
             string argString = currentArgument.substr(argName + strlen(key));
             try {
                 value = atof(argString.c_str());
+                valueFound = true;
+                break;
             } catch (...) {
                 // Не поддерживается на кластерах
                 // throw runtime_error("Invalid input epsilon");
@@ -33,11 +31,12 @@ float getFloatValueFromArg(const char *key, int argc, char *argv[]) {
         }
     }
 
-    return value;
+    return valueFound ? value : defaultValue;
 }
 
-int getIntValueFromArg(const char *key, int argc, char *argv[]) {
+int getIntValueFromArg(const char *key, int argc, char *argv[], int defaultValue) {
     int value = 0;
+    bool valueFound = false;
     // Первый параметр - ссылка на сборку
     for (int i = 1; i < argc; ++i) {
         string currentArgument(argv[i]);
@@ -46,6 +45,8 @@ int getIntValueFromArg(const char *key, int argc, char *argv[]) {
             string argString = currentArgument.substr(argName + strlen(key));
             try {
                 value = atoi(argString.c_str());
+                valueFound = true;
+                break;
             } catch (...) {
                 // Не поддерживается на кластерах
                 // throw runtime_error("Invalid input epsilon");
@@ -54,18 +55,20 @@ int getIntValueFromArg(const char *key, int argc, char *argv[]) {
         }
     }
 
-    return value;
+    return valueFound ? value : defaultValue;
 }
 
 void initVariables(int argc, char *argv[], double &Lx, double &Ly, double &Lz, double &T, int &N, int &K,
-                   double &hx, double &hy, double &hz, double &tau, int &layerSize) {
+                   double &hx, double &hy, double &hz, double &tau, int &layerSize, int &steps, int &ompThreadsCount) {
     // Первый параметр - ссылка на сборку
-    Lx = getFloatValueFromArg("-Lx=", argc, argv);
-    Ly = getFloatValueFromArg("-Ly=", argc, argv);
-    Lz = getFloatValueFromArg("-Lz=", argc, argv);
-    T = getFloatValueFromArg("-T=", argc, argv);
-    N = getIntValueFromArg("-N=", argc, argv);
-    K = getIntValueFromArg("-K=", argc, argv);
+    Lx = getFloatValueFromArg("-Lx=", argc, argv, 1);
+    Ly = getFloatValueFromArg("-Ly=", argc, argv, 1);
+    Lz = getFloatValueFromArg("-Lz=", argc, argv, 1);
+    T = getFloatValueFromArg("-T=", argc, argv, 1);
+    N = getIntValueFromArg("-N=", argc, argv, 40);
+    K = getIntValueFromArg("-K=", argc, argv, 100);
+    steps = getIntValueFromArg("-steps=", argc, argv, 20);
+    ompThreadsCount = getIntValueFromArg("-omp=", argc, argv, 1);
     // Остальные параметры будут игнорироваться (ну или позже добавлю какие-нибудь свои кастомные)
 
     hx = Lx / N;
@@ -90,7 +93,7 @@ int getLinearIndex(int i, int j, int k, int N) {
 // Заполнение граничными значениями
 void fillBoundaryValues(vector<double> &u, double t, bool isInitial, int N, double hx, double hy, double Lx, double Ly,
                         double Lz) {
-// #pragma omp parallel for collapse(2)
+#pragma omp parallel for collapse(2)
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N; ++j) {
             // X axis
@@ -135,7 +138,7 @@ void fillVectorByInitialValues(vector<vector<double>> &u, int N, double hx, doub
     fillBoundaryValues(u.at(0), 0, true, N, hx, hy, Lx, Ly, Lz);
     fillBoundaryValues(u.at(1), tau, true, N, hx, hy, Lx, Ly, Lz);
 
-// #pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(3)
     for (int i = 1; i < N; ++i) {
         for (int j = 1; j < N; ++j) {
             for (int k = 1; k < N; ++k) {
@@ -144,7 +147,7 @@ void fillVectorByInitialValues(vector<vector<double>> &u, int N, double hx, doub
         }
     }
 
-// #pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(3)
     for (int i = 1; i < N; ++i) {
         for (int j = 1; j < N; ++j) {
             for (int k = 1; k < N; ++k) {
@@ -161,7 +164,7 @@ double
 EvaluateError(vector<double> u, double t, int N, double hx, double hy, double hz, double Lx, double Ly, double Lz) {
     double error = 0;
 
-// #pragma omp parallel for collapse(3) reduction(max: error)
+#pragma omp parallel for collapse(3) reduction(max: error)
     for (int i = 0; i <= N; ++i) {
         for (int j = 0; j <= N; ++j) {
             for (int k = 0; k < N; ++k) {
@@ -186,7 +189,7 @@ makeSolution(double Lx, double Ly, double Lz, int N, double hx, double hy, doubl
 
 
     for (int step = 2; step <= steps; ++step) {
-// #pragma omp parallel for collapse(3)
+#pragma omp parallel for collapse(3)
         for (int i = 1; i < N; ++i) {
             for (int j = 1; j < N; ++j) {
                 for (int k = 1; k < N; ++k) {
@@ -195,13 +198,12 @@ makeSolution(double Lx, double Ly, double Lz, int N, double hx, double hy, doubl
                                                                  tau * tau *
                                                                  LaplaceOperator(u[(step + 2) % 3], i, j, k, N, hx, hy,
                                                                                  hz);
-
-                    fillBoundaryValues(u[step % 3], step * tau, false, N, hx, hy, Lx, Ly, Lz);
-                    cout << "Layer " << step << " max error: "
-                         << EvaluateError(u[step % 3], step * tau, N, hx, hy, hz, Lx, Ly, Lz) << std::endl;
                 }
             }
         }
+        fillBoundaryValues(u[step % 3], step * tau, false, N, hx, hy, Lx, Ly, Lz);
+        cout << "Layer " << step << " max error: "
+             << EvaluateError(u[step % 3], step * tau, N, hx, hy, hz, Lx, Ly, Lz) << std::endl;
     }
 
     double error = EvaluateError(u[steps % 3], steps * tau, N, hx, hy, hz, Lx, Ly, Lz);
@@ -212,19 +214,34 @@ makeSolution(double Lx, double Ly, double Lz, int N, double hx, double hy, doubl
 int main(int argc, char *argv[]) {
     // Размеры параллелепипеда / T - итоговое время
     double Lx, Ly, Lz, T;
-    // N - количество точек пространственной сетки / K - количество точек временной сетки
-    int N, K;
-
-    int steps = 20;
+    // N - количество точек пространственной сетки / K - количество точек временной сетки / steps - кол-во шагов для решения
+    int N, K, steps;
 
     // Шаги пространственной сетки по каждой из осей + шаг временной сетки
     double hx, hy, hz, tau;
     // Размер слоя
     int layerSize;
 
-    initVariables(argc, argv, Lx, Ly, Lz, T, N, K, hx, hy, hz, tau, layerSize);
+    // Количество нитей OMP
+    int ompThreadsCount;
 
-    makeSolution(Lx, Ly, Lz, N, hx, hy, hz, tau, layerSize, steps);
+    // Инициализация MPI, создание группы процессов, создание области связи MPI_COMM_WORLD
+    MPI_Init(NULL, NULL);
+
+    initVariables(argc, argv, Lx, Ly, Lz, T, N, K, hx, hy, hz, tau, layerSize, steps, ompThreadsCount);
+
+    omp_set_num_threads(ompThreadsCount);
+
+    double start = MPI_Wtime();
+
+    double error = makeSolution(Lx, Ly, Lz, N, hx, hy, hz, tau, layerSize, steps);
+
+    double end = MPI_Wtime();
+    double diffTime = end - start;
+
+    cout << "OMP threads: " << ompThreadsCount << endl;
+    cout << "Final error: " << error << endl;
+    cout << "Total time (s): " << diffTime << endl;
 
     return 0;
 }
