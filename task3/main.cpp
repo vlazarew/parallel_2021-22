@@ -241,7 +241,8 @@ bool isInside(int xMin1, int xMax1, int yMin1, int yMax1, int xMin2, int xMax2, 
 }
 
 // Получить соприкосновение двух параллелипедов (true - если соприкосновение есть, иначе - false). result - соприкосновение
-bool getNeighbours(ProcessParallelepiped first, ProcessParallelepiped second, ProcessParallelepiped &result) {
+bool
+getNeighbours(const ProcessParallelepiped &first, const ProcessParallelepiped &second, ProcessParallelepiped &result) {
     // Если начало одного == конец второго по оси X
     if (first.xMin == second.xMax + 1 || second.xMin == first.xMax + 1) {
         // Берем точку соприкосновения двух параллелепипедов
@@ -333,7 +334,7 @@ void fillNeighbours(vector<ProcessParallelepiped> &parallelepipeds, SolverVariab
         ProcessParallelepiped send;
         ProcessParallelepiped recv;
 
-        ProcessParallelepiped &processParallelepiped = parallelepipeds[i];
+        ProcessParallelepiped processParallelepiped = parallelepipeds[i];
         // Получаем соседей, которым будем отправлять информацию
         if (!getNeighbours(targetParallelepiped, processParallelepiped, send)) {
             continue;
@@ -352,19 +353,19 @@ void fillNeighbours(vector<ProcessParallelepiped> &parallelepipeds, SolverVariab
 #pragma region Math calculations
 
 // Аналитическое решение
-double getAnalyticValue(double x, double y, double z, double t, Parallelepiped L) {
+double getAnalyticValue(double x, double y, double z, double t, const Parallelepiped &L) {
     double at = M_PI * sqrt(1 / pow(L.x, 2) + 1 / pow(L.y, 2) + 4 / pow(L.z, 2));
 
     return sin(M_PI * x / L.x) * sin(M_PI * y / L.y) * sin(2 * z * M_PI / L.z) * cos(at * t + 2 * M_PI);
 }
 
 // Начальные условия
-double getPhi(double x, double y, double z, Parallelepiped L) {
+double getPhi(double x, double y, double z, const Parallelepiped &L) {
     return getAnalyticValue(x, y, z, 0, L);
 }
 
 // Получить индекс по x, y, z для конкрентного параллелепипеда
-int getIndex(int x, int y, int z, ProcessParallelepiped target) {
+int getIndex(int x, int y, int z, const ProcessParallelepiped &target) {
     return (x - target.xMin) * target.dy * target.dz + (y - target.yMin) * target.dz + (z - target.zMin);
 }
 
@@ -373,7 +374,8 @@ int getLocalIndex(int x, int y, int z, const SolverVariables &variables) {
     return getIndex(x, y, z, variables.processParallelepiped);
 }
 
-double findValue(vector<double> u, int x, int y, int z, vector<vector<double>> recv, SolverVariables variables) {
+double findValue(const vector<double> &u, int x, int y, int z, const vector<vector<double>> &recv,
+                 const SolverVariables &variables) {
     for (int index = 0; index < variables.processIds.size(); index++) {
         ProcessParallelepiped parallelepiped = variables.recv[index];
 
@@ -390,7 +392,7 @@ double findValue(vector<double> u, int x, int y, int z, vector<vector<double>> r
 }
 
 // Оператор Лапласа
-double calculateLaplaceOperator(const vector<double>& u, int x, int y, int z, const vector<vector<double>> &recv,
+double calculateLaplaceOperator(const vector<double> &u, int x, int y, int z, const vector<vector<double>> &recv,
                                 const SolverVariables &variables, double localUValue) {
     GridSteps H = variables.H;
 //    double start = MPI_Wtime();
@@ -519,9 +521,9 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 #pragma omp parallel for
         for (int x = processParallelepiped.xMin; x <= processParallelepiped.xMax; x++)
 #pragma omp parallel for
-            for (int y = processParallelepiped.yMin; y <= processParallelepiped.yMax; y++)
-                u[getLocalIndex(x, y, processParallelepiped.zMax, variables)] =
-                        getBoundaryValue(x, y, processParallelepiped.zMax, tau, variables);
+                for (int y = processParallelepiped.yMin; y <= processParallelepiped.yMax; y++)
+                    u[getLocalIndex(x, y, processParallelepiped.zMax, variables)] =
+                            getBoundaryValue(x, y, processParallelepiped.zMax, tau, variables);
     }
 }
 
@@ -531,7 +533,8 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 
 // Собрать параллелепипед в обособленный массив (вектор)
 vector<double>
-packParallelepiped(vector<double> u, ProcessParallelepiped parallelepiped, const SolverVariables &variables) {
+packParallelepiped(const vector<double> &u, const ProcessParallelepiped &parallelepiped,
+                   const SolverVariables &variables) {
     vector<double> packed(parallelepiped.size);
 
     // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
@@ -550,7 +553,7 @@ packParallelepiped(vector<double> u, ProcessParallelepiped parallelepiped, const
 }
 
 // Отправка и получение соседних значений
-vector<vector<double>> sendRecvValues(const vector<double> &u, SolverVariables variables) {
+vector<vector<double>> sendRecvValues(const vector<double> &u, const SolverVariables &variables) {
     unsigned long countOfNeighbours = variables.processIds.size();
     vector<vector<double>> recv(countOfNeighbours);
 
@@ -579,7 +582,8 @@ vector<vector<double>> sendRecvValues(const vector<double> &u, SolverVariables v
 
 // Отправка и получение общих значений
 vector<double>
-sendRecvTotal(vector<double> u, vector<ProcessParallelepiped> parallelepipeds, const SolverVariables &variables) {
+sendRecvTotal(const vector<double> &u, const vector<ProcessParallelepiped> &parallelepipeds,
+              const SolverVariables &variables) {
     if (variables.processId != MAIN_PROCESS_ID) {
         MPI_Request request;
         MPI_Status status;
@@ -598,7 +602,7 @@ sendRecvTotal(vector<double> u, vector<ProcessParallelepiped> parallelepipeds, c
     ProcessParallelepiped parallelepipedAll = createParallelepiped(0, variables.N, 0, variables.N, 0, variables.N);
 
     for (int index = 0; index < variables.countOfProcesses; index++) {
-        ProcessParallelepiped &parallelepiped = parallelepipeds[index];
+        ProcessParallelepiped parallelepiped = parallelepipeds[index];
         vector<double> uI(parallelepiped.size);
 
         if (index == variables.processId) {
@@ -783,7 +787,7 @@ void fillDifferenceValues(vector<double> &u, double t, const SolverVariables &va
 }
 
 // Оценка погрешности на слое
-double evaluateError(vector<double> u, double t, const SolverVariables &variables) {
+double evaluateError(const vector<double> &u, double t, const SolverVariables &variables) {
     double localError = 0, error = 0;
     int N = variables.N;
     GridSteps H = variables.H;
@@ -816,7 +820,7 @@ double evaluateError(vector<double> u, double t, const SolverVariables &variable
 
 // Cохранение слоя в формате json. Для построения графика на спец ресурсе
 void
-saveValues(vector<double> u, double t, const vector<ProcessParallelepiped> &parallelepipeds, const char *filename,
+saveValues(const vector<double> &u, double t, const vector<ProcessParallelepiped> &parallelepipeds, const char *filename,
            const SolverVariables &variables) {
     vector<double> uAll = sendRecvTotal(u, parallelepipeds, variables);
 
