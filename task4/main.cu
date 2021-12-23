@@ -7,7 +7,6 @@
 #include <cstring>
 #include <cmath>
 #include <vector>
-#include <omp.h>
 
 using namespace std;
 
@@ -64,18 +63,15 @@ struct SolverVariables {
     // Размер слоя
     int layerSize;
 
-    // Количество нитей OMP
-    int ompThreadsCount;
-
     // Id процесса / количество MPI-процессов
     int processId, countOfProcesses;
 
     // Параллелпипед, обрабтываемый отдельным процессом
     ProcessParallelepiped processParallelepiped;
     // Параллелепипеды-соседи на передачу
-    vector<ProcessParallelepiped> send;
+    vector <ProcessParallelepiped> send;
     // Параллелепипеды-соседи на прием
-    vector<ProcessParallelepiped> recv;
+    vector <ProcessParallelepiped> recv;
     // Параллелепипеды-соседи в формате id процесса
     vector<int> processIds;
 
@@ -141,7 +137,6 @@ void initVariables(int argc, char *argv[], SolverVariables &variables, int proce
     variables.N = getIntValueFromArg("-N=", argc, argv, 128);
     variables.K = getIntValueFromArg("-K=", argc, argv, 2000);
     variables.steps = getIntValueFromArg("-steps=", argc, argv, 5);
-    variables.ompThreadsCount = getIntValueFromArg("-omp=", argc, argv, 1);
     // Остальные параметры будут игнорироваться (ну или позже добавлю какие-нибудь свои кастомные)
 
     variables.H.x = variables.L.x / variables.N;
@@ -170,7 +165,7 @@ ProcessParallelepiped createParallelepiped(int xMin, int xMax, int yMin, int yMa
 
 // Блочное разбиение параллелепипеда
 void makeSplit(int xMin, int xMax, int yMin, int yMax, int zMin, int zMax, int countOfProcesses, Axis axis,
-               vector<ProcessParallelepiped> &subParallelepipeds) {
+               vector <ProcessParallelepiped> &subParallelepipeds) {
 
     // Если один процесс, то ему достается полный параллелепипед
     if (countOfProcesses == 1) {
@@ -222,8 +217,8 @@ void makeSplit(int xMin, int xMax, int yMin, int yMax, int zMin, int zMax, int c
 }
 
 // Запуск разбиения параллелпипеда на более мелкие
-vector<ProcessParallelepiped> splitParallelepiped(int N, int countOfProcesses) {
-    vector<ProcessParallelepiped> subParallelepipeds;
+vector <ProcessParallelepiped> splitParallelepiped(int N, int countOfProcesses) {
+    vector <ProcessParallelepiped> subParallelepipeds;
 
     // Коэффициенты - параметры исходного параллелепипеда
     makeSplit(0, N, 0, N, 0, N, countOfProcesses, X, subParallelepipeds);
@@ -319,7 +314,7 @@ getNeighbours(const ProcessParallelepiped &first, const ProcessParallelepiped &s
 }
 
 // Заполняем соседей
-void fillNeighbours(vector<ProcessParallelepiped> &parallelepipeds, SolverVariables &variables) {
+void fillNeighbours(vector <ProcessParallelepiped> &parallelepipeds, SolverVariables &variables) {
     variables.send.clear();
     variables.recv.clear();
     variables.processIds.clear();
@@ -374,7 +369,7 @@ int getLocalIndex(int x, int y, int z, const SolverVariables &variables) {
     return getIndex(x, y, z, variables.processParallelepiped);
 }
 
-double findValue(const vector<double> &u, int x, int y, int z, const vector<vector<double>> &recv,
+double findValue(const vector<double> &u, int x, int y, int z, const vector <vector<double>> &recv,
                  const SolverVariables &variables) {
     for (int index = 0; index < variables.processIds.size(); index++) {
         ProcessParallelepiped parallelepiped = variables.recv[index];
@@ -392,7 +387,7 @@ double findValue(const vector<double> &u, int x, int y, int z, const vector<vect
 }
 
 // Оператор Лапласа
-double calculateLaplaceOperator(const vector<double> &u, int x, int y, int z, const vector<vector<double>> &recv,
+double calculateLaplaceOperator(const vector<double> &u, int x, int y, int z, const vector <vector<double>> &recv,
                                 const SolverVariables &variables, double localUValue) {
     GridSteps H = variables.H;
 //    double start = MPI_Wtime();
@@ -451,10 +446,7 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 
     // Граница при 0
     if (processParallelepiped.xMin == 0) {
-        // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
         for (int y = processParallelepiped.yMin; y <= processParallelepiped.yMax; y++) {
-#pragma omp parallel for
             for (int z = processParallelepiped.zMin; z <= processParallelepiped.zMax; z++) {
                 // u[индекс по x, y, z для текущего параллелепипеда]
                 u[getLocalIndex(processParallelepiped.xMin, y, z, variables)] =
@@ -465,10 +457,7 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 
     // Граница при N
     if (processParallelepiped.xMax == N) {
-        // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
         for (int y = processParallelepiped.yMin; y <= processParallelepiped.yMax; y++) {
-#pragma omp parallel for
             for (int z = processParallelepiped.zMin; z <= processParallelepiped.zMax; z++) {
                 u[getLocalIndex(processParallelepiped.xMax, y, z, variables)] =
                         getBoundaryValue(processParallelepiped.xMax, y, z, tau, variables);
@@ -478,10 +467,7 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 
     // Граница при 0
     if (processParallelepiped.yMin == 0) {
-        // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
         for (int x = processParallelepiped.xMin; x <= processParallelepiped.xMax; x++) {
-#pragma omp parallel for
             for (int z = processParallelepiped.zMin; z <= processParallelepiped.zMax; z++) {
                 u[getLocalIndex(x, processParallelepiped.yMin, z, variables)] =
                         getBoundaryValue(x, processParallelepiped.yMin, z, tau, variables);
@@ -491,10 +477,7 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 
     // Граница при N
     if (processParallelepiped.yMax == N) {
-        // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
         for (int x = processParallelepiped.xMin; x <= processParallelepiped.xMax; x++) {
-#pragma omp parallel for
             for (int z = processParallelepiped.zMin; z <= processParallelepiped.zMax; z++) {
                 u[getLocalIndex(x, processParallelepiped.yMax, z, variables)] =
                         getBoundaryValue(x, processParallelepiped.yMax, z, tau, variables);
@@ -504,10 +487,7 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 
     // Граница при 0
     if (processParallelepiped.zMin == 0) {
-        // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
         for (int x = processParallelepiped.xMin; x <= processParallelepiped.xMax; x++) {
-#pragma omp parallel for
             for (int y = processParallelepiped.yMin; y <= processParallelepiped.yMax; y++) {
                 u[getLocalIndex(x, y, processParallelepiped.zMin, variables)] =
                         getBoundaryValue(x, y, processParallelepiped.zMin, tau, variables);
@@ -517,13 +497,10 @@ void fillBoundaryValues(vector<double> &u, double tau, const SolverVariables &va
 
     // Граница при N
     if (processParallelepiped.zMax == N) {
-        // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
         for (int x = processParallelepiped.xMin; x <= processParallelepiped.xMax; x++)
-#pragma omp parallel for
-                for (int y = processParallelepiped.yMin; y <= processParallelepiped.yMax; y++)
-                    u[getLocalIndex(x, y, processParallelepiped.zMax, variables)] =
-                            getBoundaryValue(x, y, processParallelepiped.zMax, tau, variables);
+            for (int y = processParallelepiped.yMin; y <= processParallelepiped.yMax; y++)
+                u[getLocalIndex(x, y, processParallelepiped.zMax, variables)] =
+                        getBoundaryValue(x, y, processParallelepiped.zMax, tau, variables);
     }
 }
 
@@ -537,12 +514,8 @@ packParallelepiped(const vector<double> &u, const ProcessParallelepiped &paralle
                    const SolverVariables &variables) {
     vector<double> packed(parallelepiped.size);
 
-    // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
     for (int i = parallelepiped.xMin; i <= parallelepiped.xMax; i++) {
-#pragma omp parallel for
         for (int j = parallelepiped.yMin; j <= parallelepiped.yMax; j++) {
-#pragma omp parallel for
             for (int k = parallelepiped.zMin; k <= parallelepiped.zMax; k++) {
                 packed[getIndex(i, j, k, parallelepiped)] = u[getLocalIndex(i, j, k, variables)];
             }
@@ -553,16 +526,16 @@ packParallelepiped(const vector<double> &u, const ProcessParallelepiped &paralle
 }
 
 // Отправка и получение соседних значений
-vector<vector<double>> sendRecvValues(const vector<double> &u, const SolverVariables &variables) {
+vector <vector<double>> sendRecvValues(const vector<double> &u, const SolverVariables &variables) {
     unsigned long countOfNeighbours = variables.processIds.size();
-    vector<vector<double>> recv(countOfNeighbours);
+    vector <vector<double>> recv(countOfNeighbours);
 
     for (int i = 0; i < countOfNeighbours; i++) {
         vector<double> packed = packParallelepiped(u, variables.send[i], variables);
         recv[i] = vector<double>(variables.recv[i].size);
 
-        vector<MPI_Request> requests(2);
-        vector<MPI_Status> statuses(2);
+        vector <MPI_Request> requests(2);
+        vector <MPI_Status> statuses(2);
 
         // Отправляем буффер с начальным адресом packed.data() и кол-вом элементов variables.send[i].size типа double
         // в процесс с id variables.processIds[i] с пометкой 0 в коммутаторе MPI_COMM_WORLD. Выходное значение записывается в requests[0]
@@ -582,7 +555,7 @@ vector<vector<double>> sendRecvValues(const vector<double> &u, const SolverVaria
 
 // Отправка и получение общих значений
 vector<double>
-sendRecvTotal(const vector<double> &u, const vector<ProcessParallelepiped> &parallelepipeds,
+sendRecvTotal(const vector<double> &u, const vector <ProcessParallelepiped> &parallelepipeds,
               const SolverVariables &variables) {
     if (variables.processId != MAIN_PROCESS_ID) {
         MPI_Request request;
@@ -608,8 +581,8 @@ sendRecvTotal(const vector<double> &u, const vector<ProcessParallelepiped> &para
         if (index == variables.processId) {
             uI = u;
         } else {
-            vector<MPI_Request> requests(1);
-            vector<MPI_Status> statuses(1);
+            vector <MPI_Request> requests(1);
+            vector <MPI_Status> statuses(1);
 
             // Получаем буффер с начальным адресом uI.data() и кол-вом элементов parallelepiped.size типа double
             // из процесса с id index с пометкой 0 в коммутаторе MPI_COMM_WORLD. Выходное значение записывается в requests[0]
@@ -636,7 +609,7 @@ sendRecvTotal(const vector<double> &u, const vector<ProcessParallelepiped> &para
 #pragma region Results fillers
 
 // Заполнение начальных условий
-void fillVectorByInitialValues(vector<vector<double>> &u, const SolverVariables &variables) {
+void fillVectorByInitialValues(vector <vector<double>> &u, const SolverVariables &variables) {
     // Заполняем граничные условия
 //    double start = MPI_Wtime();
     vector<double> &u0 = u[0];
@@ -662,13 +635,8 @@ void fillVectorByInitialValues(vector<vector<double>> &u, const SolverVariables 
 
     GridSteps H = variables.H;
 
-//    start = MPI_Wtime();
-    // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
     for (int x = xMin; x <= xMax; x++) {
-#pragma omp parallel for
         for (int y = yMin; y <= yMax; y++) {
-#pragma omp parallel for
             for (int z = zMin; z <= zMax; z++) {
                 u0[getLocalIndex(x, y, z, variables)] = getPhi(x * H.x, y * H.y, z * H.z, variables.L);
             }
@@ -680,7 +648,7 @@ void fillVectorByInitialValues(vector<vector<double>> &u, const SolverVariables 
 //    }
 
 //    start = MPI_Wtime();
-    vector<vector<double>> recv = sendRecvValues(u0, variables);
+    vector <vector<double>> recv = sendRecvValues(u0, variables);
 //    end = MPI_Wtime();
 //    if (variables.processId == MAIN_PROCESS_ID) {
 //        cout << "sendRecvValues time:" << end - start << endl;
@@ -692,11 +660,8 @@ void fillVectorByInitialValues(vector<vector<double>> &u, const SolverVariables 
 //        cout << "loop size " << (xMax - xMin + 1) * (yMax - yMin + 1) * (zMax - zMin + 1) << endl;
 //    }
     double coeff = variables.tau * variables.tau / 2;
-#pragma omp parallel for
     for (int x = xMin; x <= xMax; x++) {
-#pragma omp parallel for
         for (int y = yMin; y <= yMax; y++) {
-#pragma omp parallel for
             for (int z = zMin; z <= zMax; z++) {
                 double &currentValueU0 = u0[getLocalIndex(x, y, z, variables)];
 
@@ -724,15 +689,11 @@ void fillNextLayer(const vector<double> &u0, const vector<double> &u1, vector<do
     int zMin = max(variables.processParallelepiped.zMin, 1);
     int zMax = min(variables.processParallelepiped.zMax, variables.N - 1);
 
-    vector<vector<double>> recv = sendRecvValues(u1, variables);
+    vector <vector<double>> recv = sendRecvValues(u1, variables);
 
     double tauSquare = variables.tau * variables.tau;
-    // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
     for (int x = xMin; x <= xMax; x++) {
-#pragma omp parallel for
         for (int y = yMin; y <= yMax; y++) {
-#pragma omp parallel for
             for (int z = zMin; z <= zMax; z++) {
                 double u1Value = u1[getLocalIndex(x, y, z, variables)];
 
@@ -752,12 +713,8 @@ void fillAnalyticalValues(vector<double> &u, double t, const SolverVariables &va
     ProcessParallelepiped parallelepiped = variables.processParallelepiped;
     GridSteps H = variables.H;
 
-    // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
     for (int x = parallelepiped.xMin; x <= parallelepiped.xMax; x++) {
-#pragma omp parallel for
         for (int y = parallelepiped.yMin; y <= parallelepiped.yMax; y++) {
-#pragma omp parallel for
             for (int z = parallelepiped.zMin; z <= parallelepiped.zMax; z++) {
                 u[getLocalIndex(x, y, z, variables)] =
                         getAnalyticValue(x * H.x, y * H.y, z * H.z, t, variables.L);
@@ -771,12 +728,8 @@ void fillDifferenceValues(vector<double> &u, double t, const SolverVariables &va
     ProcessParallelepiped parallelepiped = variables.processParallelepiped;
     GridSteps H = variables.H;
 
-    // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-#pragma omp parallel for
     for (int x = parallelepiped.xMin; x <= parallelepiped.xMax; x++) {
-#pragma omp parallel for
         for (int y = parallelepiped.yMin; y <= parallelepiped.yMax; y++) {
-#pragma omp parallel for
             for (int z = parallelepiped.zMin; z <= parallelepiped.zMax; z++) {
                 u[getLocalIndex(x, y, z, variables)] =
                         fabs(u[getLocalIndex(x, y, z, variables)]) -
@@ -793,21 +746,11 @@ double evaluateError(const vector<double> &u, double t, const SolverVariables &v
     GridSteps H = variables.H;
     ProcessParallelepiped parallelepiped = variables.processParallelepiped;
 
-    // https://pages.tacc.utexas.edu/~eijkhout/pcse/html/omp-reduction.html
-    // Выполняется max в переменной localError (как альтернатива можно было б использовать critical секцию)
-    // Директива указывает на то, что данный цикл следует разделить по итерациям между потоками.
-// #pragma omp parallel reduction(max: localError)
-#pragma omp parallel for
     for (int x = parallelepiped.xMin; x <= parallelepiped.xMax; x++) {
-#pragma omp parallel for
         for (int y = parallelepiped.yMin; y <= parallelepiped.yMax; y++) {
-#pragma omp parallel for
             for (int z = parallelepiped.zMin; z <= parallelepiped.zMax; z++) {
-#pragma omp critical
-                {
-                    localError = max(localError, fabs(u[getLocalIndex(x, y, z, variables)] -
-                                                      getAnalyticValue(x * H.x, y * H.y, z * H.z, t, variables.L)));
-                }
+                localError = max(localError, fabs(u[getLocalIndex(x, y, z, variables)] -
+                                                  getAnalyticValue(x * H.x, y * H.y, z * H.z, t, variables.L)));
             }
         }
     }
@@ -820,7 +763,8 @@ double evaluateError(const vector<double> &u, double t, const SolverVariables &v
 
 // Cохранение слоя в формате json. Для построения графика на спец ресурсе
 void
-saveValues(const vector<double> &u, double t, const vector<ProcessParallelepiped> &parallelepipeds, const char *filename,
+saveValues(const vector<double> &u, double t, const vector <ProcessParallelepiped> &parallelepipeds,
+           const char *filename,
            const SolverVariables &variables) {
     vector<double> uAll = sendRecvTotal(u, parallelepipeds, variables);
 
@@ -870,7 +814,7 @@ double makeSolution(SolverVariables &variables) {
 
 //    double start = MPI_Wtime();
     // Разделяем параллелепипед по процессам на sub-параллелепипеды (Step 2)
-    vector<ProcessParallelepiped> parallelepipeds = splitParallelepiped(N, variables.countOfProcesses);
+    vector <ProcessParallelepiped> parallelepipeds = splitParallelepiped(N, variables.countOfProcesses);
 //    double end = MPI_Wtime();
 //    if (variables.processId == MAIN_PROCESS_ID) {
 //        cout << "Split time:  " << end - start << endl;
@@ -902,7 +846,7 @@ double makeSolution(SolverVariables &variables) {
 //        cout << "parallelepipeds.size(): " << parallelepipeds.size() << endl;
 //    }
 
-    vector<vector<double>> u(3, vector<double>(variables.processParallelepiped.size));
+    vector <vector<double>> u(3, vector<double>(variables.processParallelepiped.size));
 
 //    start = MPI_Wtime();
     // Заполняем начальнные условия (step 4)
@@ -977,11 +921,6 @@ int main(int argc, char *argv[]) {
 
     initVariables(argc, argv, variables, processId, countOfProcesses);
 
-    // Устанавливаем количество omp-потоков
-    omp_set_num_threads(variables.ompThreadsCount);
-
-    //omp_set_dynamic(0);
-
     double start = MPI_Wtime();
     double error = 0;
     int loops = 1;
@@ -1018,7 +957,6 @@ int main(int argc, char *argv[]) {
         fout << " | " << setw(11) << (error / loops);
         fout << " |" << endl;
 
-        fout << "OMP threads: " << variables.ompThreadsCount << endl;
         fout << "Final error: " << error / loops << endl;
         fout << "Minimal time (s): " << minTime / loops << endl;
         fout << "Maximum time (s): " << maxTime / loops << endl;
