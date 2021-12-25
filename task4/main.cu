@@ -1,8 +1,8 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <mpi/mpi.h>
-// #include <mpi.h>
+// #include <mpi/mpi.h>
+#include <mpi.h>
 #include <string>
 #include <cstring>
 #include <cmath>
@@ -418,7 +418,7 @@ __host__ __device__ int getIndex(int x, int y, int z, const ProcessParallelepipe
 }
 
 // Получить локальный индекс
-int getLocalIndex(int x, int y, int z, const SolverVariables &variables)
+__host__ __device__ int getLocalIndex(int x, int y, int z, const SolverVariables &variables)
 {
     return getIndex(x, y, z, variables.processParallelepiped);
 }
@@ -437,7 +437,7 @@ __host__ __device__ double findValue(int size, const double *u, int x, int y, in
 
     for (int index = 0; index < size; index++)
     {
-        ProcessParallelepiped parallelepiped = variables.recv[index];
+        ProcessParallelepiped parallelepiped = recvNeighboursData[index];
 
         if (x < parallelepiped.xMin || x > parallelepiped.xMax ||
             y < parallelepiped.yMin || y > parallelepiped.yMax ||
@@ -643,7 +643,7 @@ __global__ void fillZeroLayerKernel(double *u0, int xMin, int yMin, int zMin, co
     u0[getLocalIndex(x, y, z, variables)] = getPhi(x * H.x, y * H.y, z * H.z, variables.L);
 }
 
-__global__ void fillFirstLayerKernel(double *u1, const double *u0, const double *u0Recv, const ProcessParallelepiped *recvNeighbours, int xMin, int yMin, int zMin, const SolverVariables &variables)
+__global__ void fillFirstLayerKernel(double *u1, const double *u0, const double *u0Recv, const ProcessParallelepiped *recvNeighbours, int size, int xMin, int yMin, int zMin, const SolverVariables &variables)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     ProcessParallelepiped processParallelepiped = variables.processParallelepiped;
@@ -658,7 +658,7 @@ __global__ void fillFirstLayerKernel(double *u1, const double *u0, const double 
     int z = zMin + index % processParallelepiped.dz;
 
     u1[getLocalIndex(x, y, z, variables)] = u0[getLocalIndex(x, y, z, variables)] + variables.tau * variables.tau / 2 *
-                                                                                        calculateLaplaceOperator(variables.recv.size(), u0, x, y, z, u0Recv, variables.recv.data(), variables);
+                                                                                        calculateLaplaceOperator(size, u0, x, y, z, u0Recv, recvNeighbours, variables);
 }
 
 __global__ void fillNextLayerKernel(double *u, const double *u0, const double *u1, const double *uRecv, const ProcessParallelepiped *recvNeighbors, int size, int xMin, int yMin, int zMin, const SolverVariables &variables)
@@ -914,7 +914,7 @@ void fillVectorByInitialValuesKernel(vector<vector<double>> &u, const SolverVari
     double *u1Device = vectorToDevice(u[1], false);
     ProcessParallelepiped *recvNeighboursDevice = vectorToDevice(variables.recv);
 
-    fillFirstLayerKernel<<<nBlocks, GPU_BLOCK_SIZE>>>(u1Device, u0Device, uRecvDevice, recvNeighboursDevice, xMin, yMin, zMin, variables);
+    fillFirstLayerKernel<<<nBlocks, GPU_BLOCK_SIZE>>>(u1Device, u0Device, uRecvDevice, recvNeighboursDevice, variables.recv.size(), xMin, yMin, zMin, variables);
     cudaMemcpyAsync(u[1].data(), u1Device, u[1].size() * sizeof(double), cudaMemcpyDeviceToHost, 0);
 
     cudaFree(u0Device);
@@ -944,8 +944,6 @@ void fillVectorByInitialValues(vector<vector<double>> &u, const SolverVariables 
 
     int zMin = max(target.zMin, 1);
     int zMax = min(target.zMax, N - 1);
-
-    GridSteps H = variables.H;
 
     if (!USE_GPU)
     {
@@ -1091,7 +1089,7 @@ __global__ void EvaluateErrorKernel(double *u, double t, double *error, const So
 }
 
 // Оценка погрешности на слое
-__global__ double evaluateError(const vector<double> &u, double t, const SolverVariables &variables)
+double evaluateError(const vector<double> &u, double t, const SolverVariables &variables)
 {
     double localError = 0;
     double error;
@@ -1183,7 +1181,6 @@ void saveValues(const vector<double> &u, double t, const vector<ProcessParallele
 
 double makeSolution(SolverVariables &variables)
 {
-    int layerSize = variables.layerSize;
     int steps = variables.steps;
     int N = variables.N;
     double tau = variables.tau;
